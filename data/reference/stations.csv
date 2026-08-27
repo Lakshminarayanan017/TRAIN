@@ -1,0 +1,31 @@
+station_code,station_name,km_from_origin,is_block_station,has_yard,route_capacity,is_junction
+MAS,Chennai Central,0.0,true,true,12,true
+BBQ,Basin Bridge Junction,2.0,true,true,8,true
+VJM,Vyasarpadi Jeeva,4.0,false,false,4,false
+PER,Perambur,6.0,true,true,6,false
+VLK,Villivakkam,9.0,false,false,4,false
+ABU,Ambattur,15.0,true,false,4,false
+AVD,Avadi,21.0,true,true,6,false
+TI,Tiruninravur,29.0,true,false,4,false
+VEU,Veppampattu,32.0,false,false,3,false
+TRL,Tiruvallur,42.0,true,true,5,false
+MVLR,Manavur,54.0,false,false,3,false
+AJJ,Arakkonam Junction,69.0,true,true,8,true
+TNP,Tondiarpet,5.0,true,true,4,false
+TVT,Tiruvottiyur,9.0,false,false,3,false
+ENR,Ennore,16.0,true,true,4,false
+MJR,Minjur,26.0,true,false,3,false
+PON,Ponneri,35.0,false,false,3,false
+GPD,Gummidipoondi,47.0,true,true,4,false
+MSB,Chennai Beach,0.0,true,true,8,true
+MS,Chennai Egmore,4.3,true,true,8,true
+MBM,Mambalam,11.3,false,false,4,false
+GI,Guindy,15.0,true,false,4,false
+STM,St. Thomas Mount,17.1,true,false,4,false
+PV,Pallavaram,23.2,false,false,4,false
+TBM,Tambaram,29.1,true,true,6,false
+CGL,Chengalpattu Junction,59.8,true,true,6,true
+WJ,Walajabad,81.6,true,false,2,false
+CJ,Kanchipuram,95.8,true,true,3,false
+TMLP,Tirumalpur,108.4,true,false,2,false
+TKO,Thakkolam,116.0,true,false,2,false
