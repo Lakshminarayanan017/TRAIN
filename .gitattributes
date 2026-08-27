@@ -1,0 +1,11 @@
+# Data Spec 12.5 requires every team member and every demonstration run to work
+# against identical data. Git line-ending conversion would defeat that: the
+# generators write LF, and a Windows checkout without this file would produce
+# CRLF working copies whose bytes differ from a Linux teammate's.
+# Normalise to LF everywhere so a fixed seed really does mean identical files.
+*.csv text eol=lf
+*.py  text eol=lf
+*.md  text eol=lf
+
+# The source documents are the build contract; never touch their bytes.
+*.pdf binary

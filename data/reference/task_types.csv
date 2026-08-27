@@ -1,0 +1,43 @@
+task_type_id,description,department,location_kind,access_required,nominal_duration_min,min_crew,machine_required,night_permitted,monsoon_restricted,adjacent_line_speed_restriction_kmph,worksite_length_km,default_periodicity_days,applies_to_asset_type,routes_consumed
+ENG-RAIL-WELD,Rail flaw welding and piece replacement,ENG,edge,traffic_block,180,6,none,true,false,30,1.0,,rail,0
+ENG-USFD-TEST,Ultrasonic flaw detection run over plain line,ENG,edge,traffic_block,120,3,USFD_car,true,false,45,8.0,90,rail,0
+ENG-TAMPING,Through machine tamping of plain line,ENG,edge,traffic_block,240,8,tamper,true,true,30,2.0,180,ballast,0
+ENG-TURNOUT-TAMP,Turnout tamping in station limits,ENG,node,traffic_block,180,8,tamper,true,true,30,0.3,180,turnout,2
+ENG-BALLAST-SCREEN,Deep screening of the ballast bed,ENG,edge,traffic_block,300,12,BCM,true,true,20,0.5,1825,ballast,0
+ENG-BALLAST-REGULATE,Ballast profiling and regulation after tamping,ENG,edge,traffic_block,120,4,ballast_regulator,true,true,30,2.0,180,ballast,0
+ENG-RAIL-GRIND,Rail grinding to remove head defects,ENG,edge,traffic_block,180,4,rail_grinder,true,false,30,3.0,365,rail,0
+ENG-RAIL-RENEWAL,Through rail renewal and panel insertion,ENG,edge,traffic_block,360,20,none,true,true,20,0.5,,rail,0
+ENG-SLEEPER-RENEWAL,Sleeper replacement over a continuous stretch,ENG,edge,traffic_block,300,16,none,true,true,20,0.5,,sleeper,0
+ENG-DESTRESSING,Destressing of long welded rail,ENG,edge,traffic_block,240,10,none,true,false,30,1.0,730,rail,0
+ENG-TURNOUT-OVERHAUL,Turnout overhaul with switch and crossing renewal,ENG,node,traffic_block,300,12,none,true,true,15,0.2,1095,turnout,3
+ENG-LC-ATTENTION,Level crossing surface attention,ENG,edge,traffic_block,120,6,none,true,true,30,0.1,180,level_crossing,0
+ENG-BRIDGE-INSP,Bridge girder and bearing inspection,ENG,edge,traffic_block,90,4,none,false,true,30,0.1,365,bridge,0
+ENG-BRIDGE-REPAIR,Bridge bearing and girder repair,ENG,edge,traffic_block,300,10,none,false,true,15,0.1,,bridge,0
+ENG-CURVE-REALIGN,Curve realignment and versine correction,ENG,edge,traffic_block,180,10,tamper,true,true,30,0.8,730,ballast,0
+ENG-YARD-PWAY,Yard P.Way attention over station lines,ENG,node,traffic_block,150,8,none,true,true,25,0.3,365,ballast,2
+ENG-DRAIN-CLEAR,Cess and side drain clearance,ENG,edge,none,150,6,none,false,true,,1.5,180,,0
+ENG-TRACK-PATROL,Foot patrol attention to a reported geometry defect,ENG,edge,none,90,2,none,false,false,,2.0,30,,0
+TRD-OHE-INSP,OHE inspection run by tower car,TRD,edge,power_block,90,4,OHE_tower_car,true,false,30,4.0,90,OHE_span,0
+TRD-OHE-WIRE-RENEW,Contact wire renewal,TRD,edge,power_block,300,8,OHE_tower_car,true,true,20,1.0,,contact_wire,0
+TRD-OHE-INSULATOR,Insulator replacement,TRD,edge,power_block,90,4,OHE_tower_car,true,true,30,0.1,,insulator,0
+TRD-OHE-MAST,Mast and portal structure attention,TRD,edge,power_block,150,6,OHE_tower_car,true,true,25,0.2,1095,mast,0
+TRD-OHE-TENSION,Tensioning device and balance weight adjustment,TRD,edge,power_block,120,4,OHE_tower_car,true,false,30,0.3,365,OHE_span,0
+TRD-OHE-DROPPER,Dropper and jumper renewal,TRD,edge,power_block,90,4,OHE_tower_car,true,false,30,0.5,365,contact_wire,0
+TRD-NEUTRAL-SECTION,Neutral section overhaul,TRD,edge,power_block,180,6,OHE_tower_car,true,false,25,0.2,730,OHE_span,0
+TRD-OHE-EARTHING,Earthing and bonding check,TRD,edge,power_block,60,3,none,true,false,,1.0,180,OHE_span,0
+TRD-OHE-FAULT,OHE fault attention after a reported failure,TRD,edge,power_block,120,5,OHE_tower_car,true,true,25,0.3,,OHE_span,0
+TRD-OHE-YARD,Yard OHE attention over station lines,TRD,node,power_block,150,5,OHE_tower_car,true,true,25,0.2,365,OHE_span,2
+TRD-SUBSTN-MAINT,Traction substation equipment maintenance,TRD,node,none,240,5,none,true,false,,,180,substation,0
+TRD-SWITCHING-POST,Sectioning and paralleling post maintenance,TRD,node,power_block,120,4,none,true,false,,,365,substation,1
+SNT-POINT-SERVICE,Point machine servicing and adjustment,SNT,node,disconnection,60,3,none,true,false,,,90,point_machine,2
+SNT-POINT-REPLACE,Point machine replacement,SNT,node,disconnection,180,4,none,true,false,,,,point_machine,3
+SNT-TRACK-CIRCUIT,Track circuit tuning and bonding,SNT,edge,disconnection,90,3,none,true,true,,0.5,180,track_circuit,0
+SNT-AXLE-COUNTER,Axle counter head servicing and reset,SNT,edge,disconnection,90,3,none,true,true,,0.3,180,axle_counter,0
+SNT-SIGNAL-LAMP,Signal lamp and aspect verification,SNT,edge,none,45,2,none,true,false,,0.1,90,signal,0
+SNT-SIGNAL-REPLACE,Signal post and structure replacement,SNT,edge,disconnection,180,5,none,true,true,30,0.1,,signal,0
+SNT-INTERLOCK-TEST,Interlocking testing after alteration,SNT,node,disconnection,240,6,none,true,false,,,,interlocking,3
+SNT-RELAY-ROOM,Relay room maintenance and wire count,SNT,node,none,180,3,none,true,false,,,365,interlocking,0
+SNT-BLOCK-INSTRUMENT,Block instrument and block working equipment check,SNT,node,disconnection,90,3,none,true,false,,,180,interlocking,1
+SNT-LC-GATE,Level crossing gate interlocking attention,SNT,edge,disconnection,120,4,none,true,true,,0.1,180,level_crossing,0
+SNT-CABLE-LAY,S&T cable laying and repair along the cess,SNT,edge,none,240,8,none,false,true,,1.0,,,0
+SNT-TELECOM,Telecom and control circuit attention,SNT,node,none,120,3,none,true,false,,,365,,0
