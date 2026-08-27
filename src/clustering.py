@@ -75,6 +75,8 @@ class Clusterer:
         ref = reference_dir or config.REFERENCE
         self.tasks = _load(os.path.join(demand, "tasks.csv"))
         self.rules = CompatibilityRules(_load(os.path.join(ref, "compatibility_matrix.csv")))
+        self.task_types = {r["task_type_id"]: r for r in
+                           _load(os.path.join(ref, "task_types.csv"))}
 
         # Sections incident on each station, for placing node work next to edge work.
         self.incident = defaultdict(list)
@@ -146,29 +148,35 @@ class Clusterer:
 
         return max(lp(t["task_id"]) for t in subset), preds
 
-    def _crew_peak(self, subset, preds):
-        """Max simultaneous crew, scheduling parallel tasks together and
-        sequential ones after their predecessor."""
+    def _crew_profile(self, subset, preds):
+        """Max simultaneous crew overall and per department, scheduling parallel
+        tasks together and sequential ones after their predecessor. The per-
+        department peak is what each department must staff for the block."""
         dur = {t["task_id"]: int(t["requested_duration_min"]) for t in subset}
-        crew = {t["task_id"]: int(t["crew_required"]) for t in subset}
-        start, memo = {}, {}
+        memo = {}
 
         def st(tid):
             if tid not in memo:
                 memo[tid] = max([st(p) + dur[p] for p in preds[tid]] or [0])
             return memo[tid]
 
-        events = []
-        for t in subset:
-            s = st(t["task_id"])
-            events.append((s, crew[t["task_id"]]))
-            events.append((s + dur[t["task_id"]], -crew[t["task_id"]]))
-        events.sort()
-        cur = peak = 0
-        for _, delta in events:
-            cur += delta
-            peak = max(peak, cur)
-        return peak
+        def peak(tasks):
+            events = []
+            for t in tasks:
+                s = st(t["task_id"])
+                events.append((s, int(t["crew_required"])))
+                events.append((s + dur[t["task_id"]], -int(t["crew_required"])))
+            events.sort()
+            cur = hi = 0
+            for _, d in events:
+                cur += d
+                hi = max(hi, cur)
+            return hi
+
+        dept_peak = {}
+        for dept in {t["department"] for t in subset}:
+            dept_peak[dept] = peak([t for t in subset if t["department"] == dept])
+        return peak(subset), dept_peak
 
     def _access_union(self, subset, electrified):
         acc = {t["access_required"] for t in subset} - {"none"}
@@ -178,7 +186,16 @@ class Clusterer:
 
     def _describe(self, subset, anchor_type, anchor, line_id, electrified):
         crit, preds = self._critical_path(subset)
+        crew_peak, dept_crew = self._crew_profile(subset, preds)
         task_ids = [t["task_id"] for t in subset]
+        # Node work consumes station running routes; the block must fit the yard.
+        routes = sum(int(self.task_types[t["task_type_id"]]["routes_consumed"])
+                     for t in subset if t["location_kind"] == "node")
+        deadlines = [t["deadline"] for t in subset
+                     if t["safety_critical"] == "true" and t["deadline"]]
+        span = self.net.span_of(subset_edge["block_section_id"]) \
+            if (subset_edge := next((t for t in subset if t["location_kind"] == "edge"), None)) \
+            else None
         return {
             "candidate_id": "C-%s-%s" % (anchor, "_".join(sorted(t.split("-")[-1] for t in task_ids))),
             "anchor_type": anchor_type,
@@ -192,12 +209,23 @@ class Clusterer:
             "critical_path_min": crit,
             "access_union": ";".join(self._access_union(subset, electrified)),
             "line_union": ";".join(sorted({t["line_id"] for t in subset if t["line_id"]})) or "",
-            "crew_peak": self._crew_peak(subset, preds),
+            "crew_peak": crew_peak,
+            "dept_crew": ";".join("%s:%d" % (d, dept_crew[d]) for d in sorted(dept_crew)),
             "machines": ";".join(sorted({t["machine_required"] for t in subset
                                          if t["machine_required"] != "none"})),
+            "routes_consumed": routes,
+            "safety_deadline": min(deadlines) if deadlines else "",
+            "season_restricted": "true" if any(t["season_restricted"] == "true"
+                                               for t in subset) else "false",
+            "night_forbidden": "true" if any(t["night_permitted"] == "false"
+                                             for t in subset) else "false",
+            # In-memory only (underscore keys are dropped from the CSV).
+            "_tasks": subset,
+            "_dept_crew": dept_crew,
+            "_span": span,
         }
 
-    def candidates(self):
+    def candidates(self, top_k_per_anchor=None):
         pend = self.pending()
         node_tasks = defaultdict(list)     # station_code -> tasks
         edge_tasks = defaultdict(list)     # block_section_id -> tasks
@@ -241,6 +269,23 @@ class Clusterer:
             for cl in cliques:
                 emit([nts[i] for i in cl], "node", code, "", elec, require_edge=False)
 
+        # A full instance-level optimiser cannot carry every sub-clique, and does
+        # not need to: most add solve time and no reachable optimum. Keep the
+        # valuable merges per worksite - cross-department first, then larger and
+        # longer - and let singletons cover the rest. The three-department 9.1
+        # candidate scores highest and is always retained.
+        if top_k_per_anchor is not None:
+            def value(c):
+                return (len(c["departments"].split(";")), c["critical_path_min"])
+            by_anchor_size = defaultdict(list)
+            for c in out:
+                by_anchor_size[(c["anchor"], c["size"])].append(c)
+            kept = []
+            for group in by_anchor_size.values():
+                group.sort(key=value, reverse=True)   # cross-department first
+                kept.extend(group[:top_k_per_anchor])
+            out = kept
+
         # Singletons - every pending task, always (6.5).
         for t in pend:
             if t["location_kind"] == "node":
@@ -255,7 +300,8 @@ class Clusterer:
 
 HEADER = ["candidate_id", "anchor_type", "anchor", "line_id", "size", "is_merged",
           "task_ids", "departments", "task_types", "critical_path_min",
-          "access_union", "line_union", "crew_peak", "machines"]
+          "access_union", "line_union", "crew_peak", "dept_crew", "machines",
+          "routes_consumed", "safety_deadline", "season_restricted", "night_forbidden"]
 
 
 def write_csv(cands, path=None):
@@ -263,7 +309,7 @@ def write_csv(cands, path=None):
     if not os.path.isdir(os.path.dirname(path)):
         os.makedirs(os.path.dirname(path))
     with open(path, "w", newline="", encoding="utf-8") as fh:
-        w = csv.DictWriter(fh, fieldnames=HEADER, lineterminator="\n")
+        w = csv.DictWriter(fh, fieldnames=HEADER, lineterminator="\n", extrasaction="ignore")
         w.writeheader()
         w.writerows(cands)
     return path

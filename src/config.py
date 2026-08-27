@@ -36,5 +36,19 @@ MAX_CANDIDATE_SIZE = 5    # no genuine block carries ten departments
 # candidate count tractable. 9.1's three tasks all sit near km 42, one bucket.
 GEO_BUCKET_KM = 3.0
 
+# --- detention cost (Blueprint 7.3, 7.4, 13) ---------------------------------
+REROUTE_PENALTY_MIN = 8          # fixed cost of diverting a train to a parallel line
+CASCADE_FACTOR = 1.2             # one-hop knock-on onto the train behind a held one
+CANCELLATION_FACTOR = 1.5        # a train that can be neither held nor diverted
+# Balanced train-priority weights by priority_class (Blueprint 7.4).
+PRIORITY_WEIGHT = {1: 1.8, 2: 1.5, 3: 1.3, 4: 1.1, 5: 1.3, 6: 0.7}
+GOODS_DELAY_PENALTY = 90         # expected weighted minutes if a forecast rake takes the gap
+
+# --- optimiser (Blueprint 7, 13) ---------------------------------------------
+COLD_START_BUFFER_FRAC = 0.15    # stage-1 duration = critical path + fixed buffer (8.5)
+LAMBDA_WASTE = 0.4               # penalty per unused window minute - drives merging
+WEEKLY_SOLVE_TIME_LIMIT_S = 30   # CP-SAT ceiling for v1 (spec default 60)
+DEADLINE_MISS_PENALTY = 5000     # soft-hard weight so a safety task is scheduled if it can be
+
 # --- reproducibility ---------------------------------------------------------
 RANDOM_SEED = 26027
