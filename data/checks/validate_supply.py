@@ -148,6 +148,77 @@ for tno, rs in by_train.items():
                  % (tno, gap, a["block_section_id"], b["block_section_id"]))
             break
 
+# ============================================================ 10.2 goods forecast
+DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+TIME_BAND = {"00-06", "06-12", "12-18", "18-24"}
+goods = load("goods_forecast.csv", SUPPLY)
+g_seen = set()
+for r in goods:
+    key = (r["forecast_date"], r["block_section_id"], r["time_band"])
+    if key in g_seen:
+        fail("goods_forecast: duplicate (%s, %s, %s)" % key)
+    g_seen.add(key)
+    if not DATE_RE.match(r["forecast_date"]):
+        fail("goods_forecast %s: forecast_date not ISO" % (key,))
+    if r["block_section_id"] not in sections:
+        fail("goods_forecast: unknown block_section_id %s" % r["block_section_id"])
+    elif sections[r["block_section_id"]]["traffic_type"] not in ("freight", "trunk"):
+        note("goods_forecast sits on non-freight edge %s" % r["block_section_id"])
+    if r["time_band"] not in TIME_BAND:
+        fail("goods_forecast %s: time_band not in enumeration" % (key,))
+    if not r["expected_rakes"].lstrip("-").isdigit() or int(r["expected_rakes"]) < 0:
+        fail("goods_forecast %s: expected_rakes must be a non-negative integer" % (key,))
+    if r["confidence"]:
+        try:
+            c = float(r["confidence"])
+            if not (0.0 <= c <= 1.0):
+                fail("goods_forecast %s: confidence %s out of [0,1]" % (key, c))
+        except ValueError:
+            fail("goods_forecast %s: confidence not numeric" % (key,))
+
+# ========================================================= 10.3 corridor windows
+DAY = {"MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"}
+WINDOW_TYPE = {"corridor_block", "traffic_gap", "requested"}
+windows = load("corridor_windows.csv", SUPPLY)
+w_seen = set()
+blocked = defaultdict(set)          # (span, day) -> lines blocked by a corridor block
+span_lines = defaultdict(set)
+for s in sections.values():
+    span_lines[(s["from_station"], s["to_station"])].add(s["line_id"])
+for r in windows:
+    wid = r["window_id"]
+    if wid in w_seen:
+        fail("corridor_windows: duplicate window_id %s" % wid)
+    w_seen.add(wid)
+    s = sections.get(r["block_section_id"])
+    if s is None:
+        fail("%s: unknown block_section_id %s" % (wid, r["block_section_id"]))
+    if r["day_of_week"] not in DAY:
+        fail("%s: day_of_week %r not a weekday code" % (wid, r["day_of_week"]))
+    if not TIME_RE.match(r["start_time"]):
+        fail("%s: start_time %r not HH:MM" % (wid, r["start_time"]))
+    if not r["duration_min"].isdigit() or int(r["duration_min"]) <= 0:
+        fail("%s: duration_min must be a positive integer" % wid)
+    if r["window_type"] not in WINDOW_TYPE:
+        fail("%s: window_type %r not in enumeration" % (wid, r["window_type"]))
+    if r["max_departments"] and (not r["max_departments"].isdigit()
+                                 or not (1 <= int(r["max_departments"]) <= 3)):
+        fail("%s: max_departments must be 1-3 (only three departments exist)" % wid)
+    if s is not None:
+        want = "W-%s%s-%s-%s" % (s["from_station"], s["to_station"],
+                                 s["line_id"], r["day_of_week"])
+        if wid != want:
+            fail("%s: window_id does not match section/day (expected %s)" % (wid, want))
+        if r["window_type"] == "corridor_block":
+            blocked[((s["from_station"], s["to_station"]), r["day_of_week"])].add(s["line_id"])
+
+# A corridor block must never take every line of a multi-line span at once - that
+# severs the section the block was meant to keep workable (Blueprint 2.2, FR-21).
+for (span, day), lines in blocked.items():
+    if len(span_lines[span]) > 1 and lines == span_lines[span]:
+        fail("corridor block severs %s-%s on %s: all lines blocked at once"
+             % (span[0], span[1], day))
+
 # ---------------------------------------------------------------------- report
 print("train_paths          %5d rows over %d trains  %s"
       % (len(paths), len(train_meta), dict(Counter(r["train_type"] for r in paths))))
@@ -155,6 +226,12 @@ print("priority mix              %s"
       % dict(sorted(Counter(int(r["priority_class"]) for r in paths).items())))
 print("edges covered             %d / %d block sections  (anchor-compared %d)"
       % (len({r["block_section_id"] for r in paths}), len(sections), anchor_hits))
+print("goods_forecast       %5d rows over %d freight edges  %d-day horizon"
+      % (len(goods), len({r["block_section_id"] for r in goods}),
+         len({r["forecast_date"] for r in goods})))
+print("corridor_windows     %5d windows  %s"
+      % (len(windows), dict(Counter(sections[r["block_section_id"]]["corridor_id"]
+                                     for r in windows if r["block_section_id"] in sections))))
 
 if notes:
     print("\n%d NOTE(S)" % len(notes))
