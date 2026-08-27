@@ -63,9 +63,9 @@ station's chainage along its **home corridor**, and `km_origin_ref` names that z
 | `AJJ-CGL` | `MSB` | South-western loop, also Beach-referenced. |
 
 A junction shared between two corridors carries a single value on its primary corridor
-(AJJ = 69.0 on the trunk, not its 122.71 south-western-loop chainage). The off-corridor
+(AJJ = 69.0 on the trunk, not its 127.82 south-western-loop chainage). The off-corridor
 chainage lives on the edge that needs it, in `block_sections.csv` — `TKO-AJJ-SINGLE` ends at
-122.71. Per-edge positioning of tasks uses `start_km`/`end_km` there (§8.2), never this scalar.
+127.82. Per-edge positioning of tasks uses `start_km`/`end_km` there (§8.2), never this scalar.
 
 This honours the spec's anchor examples: **TRL = 42.0** and **AJJ = 69** (≈ the 68.5 end_km of
 block section `TRL-AJJ-UP`).
@@ -82,6 +82,31 @@ The flag is deliberately left as **real-world truth**. Rewriting it to match the
 would be recording a modelling artefact as railway fact, and the moment the pilot extends it
 would silently become wrong. `validate_reference.py` reports each mismatch as a **note** rather
 than an error. The reverse case — a station of degree > 2 flagged `false` — **is** an error.
+
+## Revision 3 — 2026-08-27, AJJ–CGL branch chainage corrected to real rail distances
+
+Revision 2 set Tirumalpur and Takkolam by **interpolating** between the CJ and AJJ anchors
+(105.60 / 112.12), and inherited an AJJ branch chainage of 122.71 from the Wikipedia South West
+Line route map. Both were wrong: the route-map cumulative undercounts the branch, and an
+interpolation is a guess, not a measurement.
+
+Cross-checked against IndiaRailInfo point-to-point **rail** distances, which are internally
+consistent and give Chengalpattu → Arakkonam = **68.82 km** end to end:
+
+| Hop | Real rail distance | Source |
+|---|---|---|
+| CGL → WJ | 21.94 km | IndiaRailInfo route CGL–WJ (unchanged; WJ was already 81.78) |
+| WJ → CJ | 14.1 km | IndiaRailInfo route WJ–CJ |
+| CJ → TMLP | 12 km | IndiaRailInfo AJJ–CJ 32 − AJJ–TMLP 20 |
+| TMLP → TKO | 7 km | IndiaRailInfo AJJ–TMLP 20 − AJJ–TKO 13 |
+| TKO → AJJ | 13 km | IndiaRailInfo route TKO–AJJ |
+
+Chained from CGL = 59.84 this gives **TMLP 105.60 → 107.82**, **TKO 112.12 → 114.82**, and AJJ
+on corridor 4 **122.71 → 127.82** (held in `build_block_sections.py`, `OFF_CORRIDOR_KM`). Every
+branch **section length** now equals the real inter-station rail distance; before, three of the
+five were short by up to ~3 km. `build_block_sections.py`, `build_assets.py` and
+`build_tasks.py` were re-run from the corrected master (assets 2419 → 2432); both validators
+stay green.
 
 ## Revision 2 — 2026-08-27, verified against published sources
 

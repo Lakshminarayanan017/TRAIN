@@ -59,7 +59,7 @@ consequence is worth stating explicitly, since a naive join will flag it:
 
 > **AJJ carries two chainages.** `stations.csv` records `km_from_origin = 69.0`, its position
 > on its primary corridor (the trunk, MAS = 0). On corridor 4, measured from Chennai Beach,
-> Arakkonam sits at **122.71**, which is what `TKO-AJJ-SINGLE.end_km` records. Both are correct
+> Arakkonam sits at **127.82**, which is what `TKO-AJJ-SINGLE.end_km` records. Both are correct
 > for their own corridor. Per-task positioning uses `start_km`/`end_km` on the edge (§9), never
 > the scalar on the node, precisely so this stays consistent.
 
@@ -172,8 +172,17 @@ end with no gap or overlap.
 Regenerated after `stations.csv` was reconciled against published sources (see
 `stations.README.md`, *Revision 2*). Because this file is generated from the station master
 rather than hand-written, every corrected chainage propagated automatically: corridor 3 now
-carries two-decimal km, corridor 4's endpoints moved, and `TKO-AJJ-SINGLE` ends at 122.71.
+carries two-decimal km, corridor 4's endpoints moved, and `TKO-AJJ-SINGLE` ends at 127.82.
 Edge and span counts are unchanged at 67 / 23 — the corrections moved boundaries, not topology.
+
+## Revision 4 — 2026-08-27, AJJ–CGL branch section lengths corrected
+
+Revision 3's corridor-4 chainage came from the Wikipedia South West Line route map, whose
+cumulative undercounts the branch: it put CGL → AJJ at 62.9 km against IndiaRailInfo's measured
+**68.82 km**. Regenerated after `stations.csv` was reconciled to IndiaRailInfo point-to-point
+rail distances (see `stations.README.md`, *Revision 3*). The three branch sections that were
+short are now right: `CJ-TMLP` 9.8 → **12.0 km**, `TMLP-TKO` 6.5 → **7.0 km**, `TKO-AJJ`
+10.6 → **13.0 km**; `TKO-AJJ-SINGLE` now ends at 127.82. Topology unchanged at 67 / 23.
 
 **`electrified` on corridor 4 is a spec-versus-reality decision, not a data error.** Data Spec
 §8.2 mandates `false` on the AJJ–Kanchipuram stretch; the line is in fact electrified and now

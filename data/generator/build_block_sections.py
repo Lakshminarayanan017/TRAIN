@@ -36,9 +36,11 @@ CORRIDORS = [
 ]
 
 # AJJ is measured on its primary corridor (the trunk, MAS = 0) in the station
-# master. On corridor 4, measured from Chennai Beach, it sits at 122.7. The
-# station master cannot hold both, so the off-corridor chainage lives here.
-OFF_CORRIDOR_KM = {("AJJ-CGL", "AJJ"): 122.71}
+# master. On corridor 4, measured from Chennai Beach, it sits at 127.82 (CGL at
+# 59.84 + the 68.0 km branch run from IndiaRailInfo point distances: CGL-WJ 21.94,
+# WJ-CJ 14.1, CJ-TMLP 12, TMLP-TKO 7, TKO-AJJ 13). The station master cannot hold
+# both, so the off-corridor chainage lives here.
+OFF_CORRIDOR_KM = {("AJJ-CGL", "AJJ"): 127.82}
 
 # The spec's 8.2 anchor puts the end of TRL-AJJ at 68.5 against AJJ's 69.0 post.
 SPAN_KM_OVERRIDE = {("TRL", "AJJ"): (42.0, 68.5)}
