@@ -28,5 +28,13 @@ HEADWAY_BUFFER_MIN = 0    # optional extra pad around each train occupation
 # joins the goods forecast.
 WEEK_START = dt.date(2026, 9, 7)
 
+# --- clustering / merge candidates (Blueprint 6, 13) -------------------------
+MAX_CANDIDATE_SIZE = 5    # no genuine block carries ten departments
+# geo_key bucket (Data Spec 9): tasks merge only when genuinely co-located. A
+# shared possession covers a worksite neighbourhood, not a whole 26 km section,
+# so "same block section" is bounded to a km bucket - realistic, and it keeps the
+# candidate count tractable. 9.1's three tasks all sit near km 42, one bucket.
+GEO_BUCKET_KM = 3.0
+
 # --- reproducibility ---------------------------------------------------------
 RANDOM_SEED = 26027
