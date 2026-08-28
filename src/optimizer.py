@@ -151,7 +151,8 @@ class WeeklyOptimizer:
                     var = m.NewBoolVar("x_%d_%d" % (ci, wi))
                     x[(ci, wi)] = var
                     cand_windows[ci].append(wi)
-                    det = self.detention.estimate(bsid, w["abs"] % 1440, sd, w["dow"])[0]
+                    det = self.detention.estimate(bsid, w["abs"] % 1440, sd,
+                                                  w["dow"]).weighted_minutes
                     waste = w["dur"] - sd
                     cost = int(round(det)) + int(round(config.LAMBDA_WASTE * waste))
                     cost += int(round(w["goods"] * config.GOODS_DELAY_PENALTY))

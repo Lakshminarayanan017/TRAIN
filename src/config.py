@@ -42,12 +42,34 @@ MAX_CANDIDATE_SIZE = 5    # no genuine block carries ten departments
 # candidate count tractable. 9.1's three tasks all sit near km 42, one bucket.
 GEO_BUCKET_KM = 3.0
 
-# --- detention cost (Blueprint 7.3, 7.4, 13) ---------------------------------
+# --- detention cost (Blueprint 7.3, 7.4, 2.5, 13) ----------------------------
 REROUTE_PENALTY_MIN = 8          # fixed cost of diverting a train to a parallel line
-CASCADE_FACTOR = 1.2             # one-hop knock-on onto the train behind a held one
-CANCELLATION_FACTOR = 1.5        # a train that can be neither held nor diverted
-# Balanced train-priority weights by priority_class (Blueprint 7.4).
-PRIORITY_WEIGHT = {1: 1.8, 2: 1.5, 3: 1.3, 4: 1.1, 5: 1.3, 6: 0.7}
+CANCELLATION_PENALTY_MIN = 240   # a train that can be neither held nor diverted
+CASCADE_HORIZON_MIN = 45         # a held train delays those following within this reach
+CASCADE_DECAY = 0.5              # first-order only: the follower takes this share
+# Rerouting is not unlimited. A parallel line already carrying its own traffic can
+# absorb only so many diverted trains; beyond that they are held. This is what
+# makes a daytime block on a saturated section genuinely expensive, and a night
+# one cheap - the difference the whole argument rests on (Blueprint 7.3).
+REROUTE_HEADWAY_MIN = 10         # spacing a diverted train needs on the parallel line
+# Adjacent-line caution (Blueprint 2.5). Men and plant on one line put the
+# parallel lines under a caution order, charged over the WORKSITE length only -
+# applying it over a whole 26 km section would swamp the objective.
+CAUTION_WORKSITE_KM = 1.0
+CAUTION_SPEED_KMPH = 30
+# Single-line working on the surviving edge of a double-line section is not free
+# (Blueprint 2.5): capacity falls sharply and crossovers are needed at both ends.
+SINGLE_LINE_CAPACITY_FACTOR = 0.4
+
+# Delay minutes are weighted by train type (Blueprint 7.4). The balanced column
+# is the default; aggressive mirrors how punctuality is officially measured but
+# pushed too far it makes freight the dumping ground.
+PRIORITY_WEIGHT_PROFILES = {
+    "balanced":   {1: 1.8, 2: 1.5, 3: 1.3, 4: 1.1, 5: 1.3, 6: 0.7},
+    "aggressive": {1: 3.0, 2: 2.0, 3: 2.0, 4: 1.5, 5: 1.5, 6: 0.3},
+}
+TRAIN_PRIORITY_PROFILE = "balanced"
+PRIORITY_WEIGHT = PRIORITY_WEIGHT_PROFILES[TRAIN_PRIORITY_PROFILE]
 GOODS_DELAY_PENALTY = 90         # expected weighted minutes if a forecast rake takes the gap
 
 # --- optimiser (Blueprint 7, 13) ---------------------------------------------
