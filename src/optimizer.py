@@ -54,14 +54,27 @@ def _parse_dt(s):
 
 
 class WeeklyOptimizer:
-    def __init__(self, net=None, week_start=None):
+    def __init__(self, net=None, week_start=None, scenario=None, windows=None,
+                 enable_merging=True, enable_detention=True, enable_waste=True):
         self.net = net or Network()
         self.week_start = week_start or config.WEEK_START
+        if scenario is not None:
+            self.week_start = scenario.week_start
         self.week_start_dt = dt.datetime.combine(self.week_start, dt.time(0, 0))
+        # Ablation switches (FR-34): each major component disableable by a flag,
+        # so its contribution can be isolated and measured rather than asserted.
+        self.enable_merging = enable_merging
+        self.enable_detention = enable_detention
+        self.enable_waste = enable_waste
 
-        self.candidates = Clusterer(self.net).candidates(
+        tasks = scenario.tasks if scenario is not None else None
+        cands = Clusterer(self.net, tasks=tasks).candidates(
             top_k_per_anchor=config.TOP_K_CANDIDATES_PER_ANCHOR)
-        self.windows = WindowEnumerator(self.net, week_start=self.week_start).enumerate()
+        if not self.enable_merging:
+            cands = [c for c in cands if c["size"] == 1]
+        self.candidates = cands
+        self.windows = (windows if windows is not None
+                        else WindowEnumerator(self.net, week_start=self.week_start).enumerate())
         self.detention = AnalyticalDetention(self.net)
         self.crews = _load(os.path.join(config.REFERENCE, "crews.csv"))
         self.machines_rows = _load(os.path.join(config.REFERENCE, "machines.csv"))
@@ -85,14 +98,37 @@ class WeeklyOptimizer:
         return nodes[0]["station_code"], int(c["routes_consumed"])
 
     def _deferral_reward(self, c):
-        r = 0
+        """What it costs to leave this work undone for another week, in the same
+        weighted-delay-minutes the detention side is measured in (Blueprint 7.3).
+
+        A defect that escalates imposes a speed restriction, and a speed
+        restriction on a busy section is expensive every day it stands - which is
+        why the same defect is worth more attention on a suburban trunk than on
+        the branch. Scheduling the task avoids that expected cost, so the avoided
+        cost is the reward for scheduling it.
+
+        Safety-critical work does not participate in this trade-off at all: it
+        carries a hard deadline and a fixed bonus, because a probability must
+        never be allowed to weigh against a statutory limit."""
+        reward = 0.0
         for t in c["_tasks"]:
-            if t["safety_critical"] == "true":
-                r += config.SAFETY_SCHEDULE_BONUS
+            if t["location_kind"] == "edge" and t["block_section_id"]:
+                sec = self.net.edge(t["block_section_id"])
             else:
-                base = SEV_BASE.get(t["severity"], 15)
-                r += int(base * (1 + int(t["days_pending"]) / 30.0))
-        return r
+                incident = self.net.incident_sections(t["station_code"])
+                sec = max((self.net.edge(b) for b in incident),
+                          key=lambda s: s["daily_train_count"]) if incident else None
+            trains = sec["daily_train_count"] if sec else 40
+            per_day = trains * config.SPEED_RESTRICTION_MIN_PER_TRAIN
+            hazard = config.WEEKLY_ESCALATION_HAZARD.get(t["severity"], 0.04)
+            # Work already left waiting is likelier to go, and the marginal
+            # probability rises with how long it has been open.
+            aged = 1.0 + min(int(t["days_pending"]), 90) / 90.0
+            reward += hazard * aged * per_day * config.EXPECTED_DAYS_UNTIL_FIXED
+            reward += config.TASK_COMPLETION_VALUE.get(t["severity"], 260) * aged
+            if t["safety_critical"] == "true":
+                reward += config.SAFETY_SCHEDULE_BONUS
+        return int(round(reward))
 
     # ---- model build --------------------------------------------------------
     def build(self):
@@ -129,6 +165,7 @@ class WeeklyOptimizer:
         for ci, c in enumerate(self.candidates):
             sd = self._sched_dur(c)
             n_dep = len(c["departments"].split(";"))
+            options = []
             # Which sections' windows can host this candidate.
             if c["anchor_type"] == "edge":
                 sections = [c["anchor"]]
@@ -148,17 +185,23 @@ class WeeklyOptimizer:
                         continue
                     if c["night_forbidden"] == "true" and w["night"]:
                         continue
-                    var = m.NewBoolVar("x_%d_%d" % (ci, wi))
-                    x[(ci, wi)] = var
-                    cand_windows[ci].append(wi)
-                    det = self.detention.estimate(bsid, w["abs"] % 1440, sd,
-                                                  w["dow"]).weighted_minutes
-                    waste = w["dur"] - sd
+                    det = (self.detention.estimate(bsid, w["abs"] % 1440, sd,
+                                                   w["dow"]).weighted_minutes
+                           if self.enable_detention else 0.0)
+                    waste = (w["dur"] - sd) if self.enable_waste else 0
                     cost = int(round(det)) + int(round(config.LAMBDA_WASTE * waste))
                     cost += int(round(w["goods"] * config.GOODS_DELAY_PENALTY))
                     if w["type"] != "corridor_block":
                         cost += config.LAMBDA_ACCESS
-                    pair_cost[(ci, wi)] = cost
+                    options.append((cost, wi))
+            # Keep only the cheapest slots for this candidate. Everything the
+            # solver would plausibly choose survives; the long tail that only
+            # slows presolve does not.
+            options.sort()
+            for cost, wi in options[:config.MAX_WINDOWS_PER_CANDIDATE]:
+                x[(ci, wi)] = m.NewBoolVar("x_%d_%d" % (ci, wi))
+                cand_windows[ci].append(wi)
+                pair_cost[(ci, wi)] = cost
 
         sel = {}
         place = {}
@@ -236,6 +279,8 @@ class WeeklyOptimizer:
         crews_by_dept = defaultdict(list)
         for k in self.crews:
             crews_by_dept[k["department"]].append(k)
+        self._section_corridor = {s["block_section_id"]: s["corridor_id"]
+                                  for s in net.all_sections()}
         y = {}                        # (ci, dept, crew_id) -> BoolVar
         crew_intervals = defaultdict(list)
         crew_duty = defaultdict(list)     # crew_id -> list of (sched_dur, y)
@@ -253,6 +298,23 @@ class WeeklyOptimizer:
                     quals = set(k["qualifications"].split(";"))
                     if int(k["size"]) >= need and d_types <= quals:
                         elig.append(k)
+                # Prefer the gangs based on this corridor, then the smallest crew
+                # that can still do the job - a twenty-man gang sent to a
+                # three-man task is capacity wasted elsewhere.
+                if c["anchor_type"] == "edge":
+                    corridor = self.net.edge(c["anchor"])["corridor_id"]
+                else:
+                    inc = self.net.incident_sections(c["anchor"])
+                    corridor = self.net.edge(inc[0])["corridor_id"] if inc else None
+
+                def _rank(k):
+                    base = k["base_section"]
+                    same = (base in self._section_corridor
+                            and self._section_corridor[base] == corridor)
+                    return (0 if same else 1, int(k["size"]))
+
+                elig.sort(key=_rank)
+                elig = elig[:config.MAX_CREW_OPTIONS]
                 if not elig:
                     m.Add(sel[ci] == 0)      # unstaffable - cannot be scheduled
                     break
@@ -316,7 +378,7 @@ class WeeklyOptimizer:
                 continue
             sd = self._sched_dur(c)
             for mt in c["machines"].split(";"):
-                insts = machines_by_type.get(mt, [])
+                insts = machines_by_type.get(mt, [])[:config.MAX_MACHINE_OPTIONS]
                 if not insts:
                     m.Add(sel[ci] == 0)
                     break
@@ -367,19 +429,13 @@ class WeeklyOptimizer:
         terms.append(config.LAMBDA_FAIR * max_nights)
         m.Minimize(sum(terms))
 
-        # Warm start: seed a safety-first plan so the search begins from a good
-        # solution rather than an empty one. Give each schedulable safety-critical
-        # task its own singleton in the earliest free window; the solver improves
-        # from there and may move them, but never starts blind.
-        used = set()
-        for ci, c in enumerate(self.candidates):
-            if c["size"] != 1 or c["_tasks"][0]["safety_critical"] != "true":
-                continue
-            for wi in sorted(cand_windows[ci], key=lambda w: win[w]["abs"]):
-                if wi not in used:
-                    m.AddHint(x[(ci, wi)], 1)
-                    used.add(wi)
-                    break
+        # Warm start. A weekly solve of this size will not prove optimality inside
+        # its time limit, so where it *starts* decides how good the plan is when
+        # the clock runs out. A greedy pass - best value per line-minute first,
+        # safety-critical ahead of everything - gives CP-SAT a sound plan to
+        # improve on rather than an empty one to discover from scratch.
+        for ci, wi in self._greedy_hint(x, win, cand_windows, pair_cost):
+            m.AddHint(x[(ci, wi)], 1)
 
         self._model = m
         self._x = x
@@ -448,6 +504,57 @@ class WeeklyOptimizer:
             "wall_time_s": round(solver.WallTime(), 1),
         }
 
+
+    def _greedy_hint(self, x, win, cand_windows, pair_cost):
+        """A quick feasible plan for the solver to start from.
+
+        Candidates are taken in order of value per line-minute - what the block
+        is worth against how much railway it occupies - with safety-critical work
+        ahead of everything. Each is placed in its cheapest window that is still
+        free and does not clash on the section or sever its span. Crew and
+        machine feasibility is left to the solver, which repairs the hint; the
+        point is a good starting region, not a finished plan."""
+        ranked = []
+        for ci, c in enumerate(self.candidates):
+            if not cand_windows.get(ci):
+                continue
+            sd = max(1, self._sched_dur(c))
+            urgent = any(t["safety_critical"] == "true" for t in c["_tasks"])
+            ranked.append(((0 if urgent else 1, -self._deferral_reward(c) / float(sd)), ci))
+        ranked.sort()
+
+        used_windows = set()
+        used_tasks = set()
+        section_busy = defaultdict(list)
+        span_busy = defaultdict(list)
+        hints = []
+        for _, ci in ranked:
+            c = self.candidates[ci]
+            ids = {t["task_id"] for t in c["_tasks"]}
+            if ids & used_tasks:
+                continue
+            sd = self._sched_dur(c)
+            for wi in sorted(cand_windows[ci], key=lambda w: pair_cost[(ci, w)]):
+                if wi in used_windows:
+                    continue
+                w = win[wi]
+                s, e = w["abs"], w["abs"] + sd
+                bsid = w["bsid"]
+                if any(s < be and bs < e for bs, be in section_busy[bsid]):
+                    continue
+                span = self.net.span_of(bsid)
+                lines = self.net.edges_on_span(*span)
+                if len(lines) > 1:
+                    busy = {b for bs, be, b in span_busy[span] if s < be and bs < e}
+                    if len(busy | {bsid}) >= len(lines):
+                        continue
+                hints.append((ci, wi))
+                used_windows.add(wi)
+                used_tasks |= ids
+                section_busy[bsid].append((s, e))
+                span_busy[span].append((s, e, bsid))
+                break
+        return hints
 
     def validate(self, res):
         """Prove the solution honours the hard constraints - a plan the optimiser

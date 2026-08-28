@@ -64,16 +64,22 @@ class CompatibilityRules:
 
 def _km(task):
     """A task's location in km. Edge tasks sit at their start; node tasks at the
-    station post (filled in by the caller)."""
-    return float(task["_km"])
+    station post, which the caller annotates as ``_km`` because only the caller
+    holds the station master. Falls back to the task's own chainage so a task
+    that has not been annotated still compares sensibly rather than raising."""
+    if task.get("_km") not in (None, ""):
+        return float(task["_km"])
+    return float(task.get("start_km") or 0.0)
 
 
 class Clusterer:
-    def __init__(self, net=None, demand_dir=None, reference_dir=None):
+    def __init__(self, net=None, demand_dir=None, reference_dir=None, tasks=None):
         self.net = net or Network()
         demand = demand_dir or config.DEMAND
         ref = reference_dir or config.REFERENCE
-        self.tasks = _load(os.path.join(demand, "tasks.csv"))
+        # A scenario may inject its own backlog; otherwise the live pool is read
+        # from the demand bucket. Both planners must receive the same object.
+        self.tasks = tasks if tasks is not None else _load(os.path.join(demand, "tasks.csv"))
         self.rules = CompatibilityRules(_load(os.path.join(ref, "compatibility_matrix.csv")))
         self.task_types = {r["task_type_id"]: r for r in
                            _load(os.path.join(ref, "task_types.csv"))}
@@ -275,14 +281,19 @@ class Clusterer:
         # longer - and let singletons cover the rest. The three-department 9.1
         # candidate scores highest and is always retained.
         if top_k_per_anchor is not None:
+            # Rank by coordination value first - a block carrying three
+            # departments is the whole point - then by the SHORTEST critical
+            # path. Length matters because a merge that outgrows every available
+            # window is not a candidate at all, merely an idea; keeping the
+            # longest cliques leaves the optimiser nothing it can actually place.
             def value(c):
-                return (len(c["departments"].split(";")), c["critical_path_min"])
+                return (-len(c["departments"].split(";")), c["critical_path_min"])
             by_anchor_size = defaultdict(list)
             for c in out:
                 by_anchor_size[(c["anchor"], c["size"])].append(c)
             kept = []
             for group in by_anchor_size.values():
-                group.sort(key=value, reverse=True)   # cross-department first
+                group.sort(key=value)
                 kept.extend(group[:top_k_per_anchor])
             out = kept
 

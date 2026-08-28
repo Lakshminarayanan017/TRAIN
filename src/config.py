@@ -74,6 +74,25 @@ GOODS_DELAY_PENALTY = 90         # expected weighted minutes if a forecast rake 
 
 # --- optimiser (Blueprint 7, 13) ---------------------------------------------
 COLD_START_BUFFER_FRAC = 0.15    # stage-1 duration = critical path + fixed buffer (8.5)
+# The cost of NOT doing the work (Blueprint 7.3):
+#   deferral = P(escalate over the horizon)
+#            x delay minutes per day under the resulting speed restriction
+#            x expected days until it is fixed
+# Both sides of the trade-off are then in the same unit - weighted delay minutes -
+# which is what turns "maximise asset availability" into arithmetic. Until the
+# escalation model is trained these hazards are the rule-based cold start (8.5).
+WEEKLY_ESCALATION_HAZARD = {"IMDT": 0.40, "1": 0.22, "critical": 0.22,
+                            "2": 0.10, "major": 0.10, "3": 0.04, "minor": 0.04}
+# The escalation term alone undervalues work on lightly-trafficked track: few
+# trains means a small speed-restriction cost, so a branch would never be
+# maintained at all. That is not how a railway works - maintenance is not
+# optional, and the question is when, not whether. This is the standing value of
+# completing a task: asset condition kept, the safety margin preserved, and work
+# kept out of a backlog that otherwise compounds.
+TASK_COMPLETION_VALUE = {"IMDT": 1200, "1": 800, "critical": 800,
+                         "2": 450, "major": 450, "3": 260, "minor": 260}
+SPEED_RESTRICTION_MIN_PER_TRAIN = 1.4   # a caution order costs about this per train
+EXPECTED_DAYS_UNTIL_FIXED = 14          # how long the restriction stands if deferred
 LAMBDA_WASTE = 0.4               # penalty per unused window minute - drives merging
 LAMBDA_ACCESS = 60               # penalty per block placed outside a corridor block (flagged access)
 LAMBDA_FAIR = 25                 # penalty on the busiest crew's night count - spreads nights
@@ -81,7 +100,35 @@ WEEKLY_SOLVE_TIME_LIMIT_S = 60   # CP-SAT ceiling for the scheduled run
 SAFETY_SCHEDULE_BONUS = 5000     # reward for fitting a safety-critical task before its deadline
 MAX_BLOCKS_PER_CORRIDOR_WEEK = 40  # practical ceiling on corridor disruption
 TOP_K_CANDIDATES_PER_ANCHOR = 5  # merge candidates kept per worksite per size class
+# A candidate does not need every window it could legally take. Keeping the
+# cheapest few cuts the model by several times over with no reachable optimum
+# lost - the solver never wants the fortieth-best slot - and it is the difference
+# between finding a good plan in seconds and not finishing presolve.
+MAX_WINDOWS_PER_CANDIDATE = 12
+# Nor does a block need every qualified crew in the division offered to it. Work
+# is done by the gangs based on that corridor; offering the solver the nearest
+# few is both realistic and the difference between a model that presolves in
+# seconds and one that does not presolve at all.
+MAX_CREW_OPTIONS = 6
+MAX_MACHINE_OPTIONS = 8
 CANDIDATE_TERMINAL_MIN = 6 * 60  # night-shift window: a block starting before 06:00 is a night duty
+
+# --- evaluation harness (Blueprint 12) ---------------------------------------
+EVAL_SEEDS = 30                  # independent weeks; a single week proves nothing
+EVAL_TASKS_PER_WEEK = 300        # backlog presented to both planners each week
+EVAL_SOLVE_TIME_LIMIT_S = 45     # per-solve ceiling inside the harness
+# Current practice does coordinate informally, through phone calls and corridor
+# meetings. Crediting the baseline with an incidental merge rate shrinks the
+# headline number and is what makes it credible (Blueprint 12.2).
+# This is the probability that informal coordination happens *when a co-located
+# compatible job that fits the slot actually exists*. It is calibrated so the
+# achieved rate - blocks that end up carrying more than one department - lands in
+# the 10-15% band the Blueprint specifies; the two numbers are not the same thing
+# because opportunities are rarer than blocks.
+BASELINE_INCIDENTAL_MERGE_RATE = 0.32
+# The order departments get first call on windows. Rotated per seed so no
+# department is structurally advantaged across the experiment.
+DEPARTMENT_ORDER = ["ENG", "TRD", "SNT"]
 
 # --- reproducibility ---------------------------------------------------------
 RANDOM_SEED = 26027
