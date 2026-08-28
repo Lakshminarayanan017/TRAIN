@@ -159,11 +159,21 @@ class WindowEnumerator:
                     windows.append(self._row(sec, date, daycode, "traffic_gap",
                                              start, usable,
                                              self._goods_risk(bsid, date, band, usable), ""))
-                for cw in self._corridor.get((bsid, daycode), []):
+                corridor = self._corridor.get((bsid, daycode), [])
+                for cw in corridor:
                     windows.append(self._row(sec, date, daycode, "corridor_block",
                                              to_min(cw["start_time"]),
                                              int(cw["duration_min"]), 0.0,
                                              cw["max_departments"]))
+                # A requested-access option where no corridor block exists that
+                # day, so urgent work can be fitted (FR-17). Its detention cost is
+                # real, so it is dear on a busy line and cheap on a quiet one.
+                if not corridor:
+                    start = config.REQUESTED_START_MIN
+                    windows.append(self._row(sec, date, daycode, "requested", start,
+                                             config.REQUESTED_DURATION_MIN,
+                                             self._goods_risk(bsid, date, band_of(start),
+                                                              config.REQUESTED_DURATION_MIN), ""))
         return windows
 
     def _row(self, sec, date, daycode, wtype, start_min, duration, goods_risk, max_dept):

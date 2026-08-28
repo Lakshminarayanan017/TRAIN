@@ -22,6 +22,12 @@ SETUP_MIN = 20            # men and machines onto the track after the last train
 CLEARANCE_MIN = 20        # clear, account for tools, certify the line fit
 MIN_USABLE_MIN = 60       # below this a window is discarded
 HEADWAY_BUFFER_MIN = 0    # optional extra pad around each train occupation
+# A newly requested access window - track access asked for outside the pre-planned
+# corridor blocks (FR-17). Offered on every edge/day that has no corridor block, so
+# urgent work can be fitted; penalised by lambda_access and by its real detention,
+# so the optimiser reaches for it only when it pays.
+REQUESTED_START_MIN = 60          # 01:00 night slot
+REQUESTED_DURATION_MIN = 180
 
 # The planning week the enumerator builds windows for. Seven consecutive dates
 # from here; day-of-week joins the train paths and corridor pattern, the date
@@ -47,8 +53,13 @@ GOODS_DELAY_PENALTY = 90         # expected weighted minutes if a forecast rake 
 # --- optimiser (Blueprint 7, 13) ---------------------------------------------
 COLD_START_BUFFER_FRAC = 0.15    # stage-1 duration = critical path + fixed buffer (8.5)
 LAMBDA_WASTE = 0.4               # penalty per unused window minute - drives merging
-WEEKLY_SOLVE_TIME_LIMIT_S = 30   # CP-SAT ceiling for v1 (spec default 60)
-DEADLINE_MISS_PENALTY = 5000     # soft-hard weight so a safety task is scheduled if it can be
+LAMBDA_ACCESS = 60               # penalty per block placed outside a corridor block (flagged access)
+LAMBDA_FAIR = 25                 # penalty on the busiest crew's night count - spreads nights
+WEEKLY_SOLVE_TIME_LIMIT_S = 60   # CP-SAT ceiling for the scheduled run
+SAFETY_SCHEDULE_BONUS = 5000     # reward for fitting a safety-critical task before its deadline
+MAX_BLOCKS_PER_CORRIDOR_WEEK = 40  # practical ceiling on corridor disruption
+TOP_K_CANDIDATES_PER_ANCHOR = 5  # merge candidates kept per worksite per size class
+CANDIDATE_TERMINAL_MIN = 6 * 60  # night-shift window: a block starting before 06:00 is a night duty
 
 # --- reproducibility ---------------------------------------------------------
 RANDOM_SEED = 26027
