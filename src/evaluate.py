@@ -73,27 +73,49 @@ class Harness:
 
         results = {name: [] for name in arms}
         all_violations = []
+        unsolved = []
+        kept = []
         started = time.time()
 
         for i, scen in enumerate(scenarios, 1):
             self._log("  week %2d/%d (seed %d)..." % (i, len(scenarios), scen.seed))
             blocks = self.run_baseline(scen)
-            results["baseline"].append(
-                metrics.compute(blocks, scen, self.net, self.detention))
+            rows = {"baseline": metrics.compute(blocks, scen, self.net, self.detention)}
 
+            failed = []
             for name, flags in arms.items():
                 if name == "baseline":
                     continue
                 blocks, res, viol = self.run_coordinated(scen, **flags)
+                # A solve that ran out of clock without an incumbent produced no
+                # plan at all. Scoring it as a week of zero occupation and zero
+                # detention would hand the coordinated arm both headline wins for
+                # having failed, so the seed is discarded and reported instead.
+                if res["status"] not in ("OPTIMAL", "FEASIBLE"):
+                    failed.append((name, res["status"]))
+                    continue
                 if viol:
                     all_violations.append((scen.seed, name, viol))
-                results[name].append(
-                    metrics.compute(blocks, scen, self.net, self.detention))
+                rows[name] = metrics.compute(blocks, scen, self.net, self.detention)
+
+            if failed:
+                unsolved.append((scen.seed, failed))
+                self._log("      DISCARDED - no incumbent: %s"
+                          % ", ".join("%s=%s" % f for f in failed))
+                continue
+
+            # Arms stay paired: a seed counts for every arm or for none, so the
+            # per-week differences the comparison reports are genuinely paired.
+            for name, row in rows.items():
+                results[name].append(row)
+            kept.append(scen)
 
         self.elapsed = time.time() - started
         self.violations = all_violations
+        self.unsolved = unsolved
+        self.attempted = len(scenarios)
         self.results = results
-        self.scenarios = scenarios
+        self.scenarios = kept
         return results
 
 
@@ -122,6 +144,17 @@ def report(harness):
     print("=" * 78)
     print("%d independent weeks, identical scenarios to both planners, %ds solve "
           "ceiling\nsolved in %.0fs" % (n, harness.time_limit, harness.elapsed))
+    if harness.unsolved:
+        print("\n  %d of %d weeks DISCARDED - the solver found no incumbent inside "
+              "the %ds ceiling."
+              % (len(harness.unsolved), harness.attempted, harness.time_limit))
+        for seed, failed in harness.unsolved:
+            print("    seed %d: %s" % (seed, ", ".join("%s=%s" % f for f in failed)))
+        print("  A discarded week is excluded from every arm rather than scored as")
+        print("  an empty plan. Raise --time-limit until this list is empty.")
+    if n == 0:
+        print("\nNo week survived the solve ceiling. Nothing below would mean anything.")
+        return
 
     print("\nPRIMARY")
     for key, label in (("line_occupation_hours", "line occupation (hours)"),
@@ -133,6 +166,14 @@ def report(harness):
         print("  %-26s   spread sd %.1f / %.1f, coordinated better in %d of %d weeks"
               % ("", base[key]["sd"], coord[key]["sd"],
                  c["weeks_better"] if key in LOWER_IS_BETTER else c["weeks_worse"], n))
+
+    tk = cmp["tasks_scheduled"]
+    if abs(tk["delta"]) > 0.5:
+        print("  note: the two arms did not complete the same amount of work "
+              "(%+.1f tasks)," % tk["delta"])
+        print("        so raw line occupation is not a like-for-like figure. "
+              "Occupation per")
+        print("        task done, under TERTIARY, is the comparable one.")
 
     print("\nSECONDARY - guards against gaming")
     for key, label in (("tasks_scheduled", "tasks completed"),
@@ -195,6 +236,8 @@ def write_results(harness, path=None):
         os.makedirs(os.path.dirname(path))
     payload = {
         "seeds": len(harness.results["baseline"]),
+        "seeds_attempted": harness.attempted,
+        "seeds_discarded_no_incumbent": harness.unsolved,
         "solve_time_limit_s": harness.time_limit,
         "elapsed_s": round(harness.elapsed, 1),
         "per_arm_aggregate": {k: metrics.aggregate(v) for k, v in harness.results.items()},

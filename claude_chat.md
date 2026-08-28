@@ -35,18 +35,22 @@ volumes. Nothing downstream can start before its input tables exist (§12.2).
 | 1 Reference | `compatibility_matrix.csv` | §8.5 | 30–40 | **done** — 40 |
 | 1 Reference | `machines.csv` / `crews.csv` | §8.6 | ~50 / ~120 | **done** — 49 / 120 |
 | 2 Demand | `tasks.csv` | §9 | ~4,000 | **done** — 4,000, 283 pending |
-| 3 Supply | `train_paths.csv` | §10.1 | ~15,000 | not started |
-| 3 Supply | `goods_forecast.csv` | §10.2 | — | not started |
-| 3 Supply | `corridor_windows.csv` | §10.3 | ~200 | not started |
-| 4 History | `block_executions.csv` | §11.1 | ~2,000 | not started |
-| 4 History | `defect_lifecycle.csv` | §11.2 | ~3,000 | not started |
-| 4 History | `detention_log.csv` | §11.3 | ~2,000 | not started |
-| 4 History | `emergency_events.csv` | §11.4 | ~150 | not started |
+| 3 Supply | `train_paths.csv` | §10.1 | ~15,000 | **done** — 6,378 |
+| 3 Supply | `goods_forecast.csv` | §10.2 | — | **done** — 1,344 |
+| 3 Supply | `corridor_windows.csv` | §10.3 | ~200 | **done** — 101 |
+| 4 History | `block_executions.csv` | §11.1 | ~2,000 | **done** — 2,343 |
+| 4 History | `defect_lifecycle.csv` | §11.2 | ~3,000 | **done** — 3,500 |
+| 4 History | `detention_log.csv` | §11.3 | ~2,000 | **done** — 1,591 |
+| 4 History | `emergency_events.csv` | §11.4 | ~150 | **done** — 180 |
 
-**Buckets 1 and 2 are complete.** Next: bucket 3, supply — `train_paths.csv` (§10.1, ~15,000
-rows and the largest table in the project), `goods_forecast.csv` (§10.2) and
-`corridor_windows.csv` (§10.3, generated from the Blueprint §5.4 pattern). Then bucket 4,
-history, which is the actual ML training set.
+**All four buckets are complete**, and the planning system in `src/` is built on top of them.
+The project is now in **step 4, evaluation** — running the coordinated planner against the
+modelled current practice over seeded weeks and reporting the difference honestly.
+
+`train_paths.csv` landed at 6,378 rows against a §10.1 target of ~15,000. The table is one row
+per train per section per running day for the trains actually named in the pilot's four
+corridors; reaching 15,000 would mean inventing services that do not run. Flagged rather than
+padded.
 
 ## Conventions settled so far
 
@@ -117,8 +121,12 @@ tables not yet built: roughly **26,150 rows still to come** against ~5,100 built
 ## Checks
 
 ```bash
+python data/generator/generate_all.py     # rebuild every CSV, then run all four validators
 python data/checks/validate_reference.py
 python data/checks/validate_demand.py
+python data/checks/validate_supply.py
+python data/checks/validate_history.py
+python -m src.evaluate --seeds 5          # coordinated vs current practice
 ```
 
 Referential integrity, enumeration conformance and domain rules across the reference tables,
@@ -141,6 +149,14 @@ constants; hand-editing 67 rows across 16 columns is not worth the risk.
    per-edge that is far too heavy for the outermost trunk section, so it is treated here as the
    *section* figure and split across the four edges (70/70/35/35) to sum to the anchor exactly.
    Flag if the intent was genuinely per-edge.
+   This is now visible downstream. `validate_supply.py` notes `TI-TRL-UP` and `TRL-AJJ-UP` at
+   0.3x their anchor — 12 of 67 edges sit below 0.5x — while the supply layer matches the
+   reference layer in aggregate (6,378 paths against a 6,312 anchor, 1.01x) and per corridor
+   (MAS-AJJ 0.77x, the other three between 1.15x and 1.56x). It is the 70/70/35/35 split on the
+   outer trunk edges, not a shortfall in the table. It matters because `detention.py` costs a
+   block from the paths alone — `daily_train_count` only ever reaches it as a feature of the
+   untrained residual model — so a daytime block on those two edges is priced off roughly a
+   third of the traffic the reference layer says runs there, and is understated accordingly.
 2. **Tambaram–Chengalpattu is not modelled.** Real track, but outside the four corridors named
    in Blueprint §5.4, so corridors 3 and 4 connect only through Arakkonam. Intentional; revisit
    if the pilot scope widens.
@@ -157,6 +173,57 @@ constants; hand-editing 67 rows across 16 columns is not worth the risk.
    present it as settled practice.
 
 ## Log
+
+### 2026-08-28 — step 4, evaluation
+
+The harness ran end to end for the first time and three defects came out of it. All three were
+measurement faults rather than planner faults, and two of the three flattered our own system.
+
+- **A failed solve was being scored as a brilliant week.** On seed 26027 at a 15 s ceiling
+  CP-SAT returned `UNKNOWN` — no incumbent at all — and `_extract` handed back an empty block
+  list. An empty plan validates clean, occupies zero line-hours and causes zero detention, so
+  the week averaged into the results as a crushing win on both headline metrics. `validate()`
+  now fails a result whose status is neither `OPTIMAL` nor `FEASIBLE`, and fails an empty plan
+  offered candidates. The harness discards such a seed **across every arm**, so the paired
+  comparison stays paired, and prints what it discarded and why.
+- **The corridor ceiling was enforced on the optimiser only.** `MAX_BLOCKS_PER_CORRIDOR_WEEK`
+  is 40; the baseline, booking through the ledger, had no such check and was taking **64 blocks
+  on MAS-AJJ** against the optimiser's 40. The shortfall then showed up as tasks the
+  coordinated planner had failed to complete. The ceiling is a policy on the railway, not a
+  property of the solver, so it now lives in `ResourceLedger` and binds both planners.
+- **Deadlines were being applied asymmetrically, the other way.** The baseline refused any
+  window past a task's `deadline`; the optimiser bars only `safety_deadline`, the
+  safety-critical subset. Current practice was being held to the stricter rule. Ordinary work
+  that runs late is backlog cost, not a constraint breach, so the baseline now bars a window
+  only for safety-critical work — which moves the numbers *against* us, and is correct.
+
+**What the corrected comparison actually says** (3 seeds, 60 s ceiling; the 30-seed run is what
+counts):
+
+| | baseline | coordinated | |
+|---|---|---|---|
+| weighted detention (min) | 4,543 | 1,372 | **−70%**, better in 3 of 3 weeks |
+| merge rate | 13.5% | 26.4% | **+95%** |
+| tasks completed | 120.3 | 136.7 | **+14%** |
+| line-minutes per task done | 130.9 | 118.4 | **−9.6%** |
+| work per line-minute | 96.2% | 105.9% | over 100% — parallel work in one possession |
+| line occupation (hours) | 262.6 | 269.6 | **+2.6%, worse** |
+
+The headline metric goes the wrong way, and that is the honest result rather than a bug. The
+coordinated planner is not buying back corridor time; it is doing **14% more work in the same
+corridor time**. Raw occupation is not comparable between two arms that completed different
+amounts of work, so the report now says so in place of a bare "worse", and the comparable
+figure is occupation per task done. Anyone presenting this should lead with detention and
+occupation-per-task, never with raw occupation.
+
+One number still to answer for: **new access requested is up 122%** (16.3 → 36.3 windows). The
+optimiser reaches outside the corridor pattern far more readily than current practice does, and
+each of those needs fresh sanction. `LAMBDA_ACCESS` is 60 and is evidently not pricing that
+properly. Open.
+
+Renamed `block_utilisation_pct` to `work_per_line_minute_pct` across `metrics.py` and
+`evaluate.py`. The old name invited a reader to see a figure over 100% as a bug; exceeding 100%
+is the whole point, being what parallel work in one possession looks like.
 
 ### 2026-08-27
 - Read all three source documents; established the build order and volumes from Data Spec §12.

@@ -20,8 +20,12 @@ information, not the cost of incompetence.
 
 Fairness is enforced structurally: the baseline books through the same
 ``ResourceLedger`` the coordinated planner's constraints describe, so both obey
-identical crew rest, machine transit, never-sever and deadline semantics. If the
-baseline were allowed to cheat on constraints the comparison would be worthless.
+identical crew rest, machine transit, never-sever, corridor-ceiling and deadline
+semantics. If the baseline were allowed to cheat on constraints the comparison
+would be worthless - and the corridor ceiling is the case that proves it. It was
+enforced on the optimiser alone at first, which let current practice book 64
+blocks on the trunk against the optimiser's 40 and then counted the shortfall
+against the optimiser as tasks it had failed to complete.
 """
 from __future__ import annotations
 
@@ -54,6 +58,7 @@ class ResourceLedger:
         self.section_bookings = defaultdict(list)   # bsid -> [(start, end)]
         self.span_bookings = defaultdict(list)      # span -> [(start, end, bsid)]
         self.station_bookings = defaultdict(list)   # station -> [(start, end, routes)]
+        self.corridor_blocks = defaultdict(int)     # corridor_id -> blocks booked this week
 
         self.machine_avail = defaultdict(list)      # machine_id -> [(start, end)]
         self.machine_type = {}
@@ -82,6 +87,18 @@ class ResourceLedger:
             if len(busy) >= len(lines):
                 return False
         return True
+
+    def corridor_free(self, bsid):
+        """The weekly ceiling on how much of one corridor may be taken for
+        maintenance. It is a policy on the railway, not a property of the
+        optimiser, so current practice is held to it too - the coordinated
+        planner carries the same constraint at instance level. Applying it to
+        only one side would let the baseline take 60-plus blocks on the trunk
+        against the optimiser's 40 and call the difference a planning result."""
+        cor = self.net.edge(bsid)["corridor_id"]
+        if not cor:
+            return True
+        return self.corridor_blocks[cor] < config.MAX_BLOCKS_PER_CORRIDOR_WEEK
 
     def station_free(self, station, start, end, routes):
         if routes <= 0:
@@ -131,6 +148,9 @@ class ResourceLedger:
     def book(self, bsid, start, end, day, night, crews, machines, station=None, routes=0):
         self.section_bookings[bsid].append((start, end))
         self.span_bookings[self.net.span_of(bsid)].append((start, end, bsid))
+        cor = self.net.edge(bsid)["corridor_id"]
+        if cor:
+            self.corridor_blocks[cor] += 1
         for cid in crews:
             self.crew_bookings[cid].append((start, end, day, night))
         for mid in machines:
@@ -246,8 +266,13 @@ class BaselinePlanner:
             sections = self.net.incident_sections(node_station)
         else:
             sections = [task["block_section_id"]]
+        # Only a safety-critical deadline is a hard bar on a window. Ordinary
+        # work that runs past its target date is late, not forbidden, and it
+        # stays in the plan as backlog cost - which is how the coordinated
+        # planner treats it too. Barring it here instead would hold current
+        # practice to a stricter rule than the system it is measured against.
         deadline = (dt.date(*map(int, task["deadline"].split("-")))
-                    if task["deadline"] else None)
+                    if task["safety_critical"] == "true" and task["deadline"] else None)
 
         candidates = []
         for bsid in sections:
@@ -308,6 +333,8 @@ class BaselinePlanner:
 
             start, end = w["abs"], w["abs"] + dur
             if not ledger.section_free(w["bsid"], start, end):
+                continue
+            if not ledger.corridor_free(w["bsid"]):
                 continue
             routes = sum(int(self.task_types[g["task_type_id"]]["routes_consumed"])
                          for g in group if g["location_kind"] == "node")

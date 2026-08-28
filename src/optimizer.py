@@ -584,6 +584,18 @@ class WeeklyOptimizer:
         v = []
         blocks = res["blocks"]
 
+        # A solve that found no incumbent is not a plan that happens to be empty.
+        # Left unflagged it validates clean and then averages into the results as
+        # a week with zero occupation and zero detention, which flatters the
+        # coordinated arm on exactly the two headline metrics.
+        if res.get("status") not in ("OPTIMAL", "FEASIBLE"):
+            v.append("no incumbent: solver returned %s within the time limit"
+                     % res.get("status"))
+            return v
+        if self.candidates and not blocks:
+            v.append("empty plan: %d candidates were offered and none scheduled"
+                     % len(self.candidates))
+
         def span_iv(b):
             return b["start_abs"], b["start_abs"] + b["duration_min"]
 
