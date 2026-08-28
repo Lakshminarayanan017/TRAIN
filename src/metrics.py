@@ -13,7 +13,7 @@ the measuring instrument does not know which planner it is looking at.
                backlog at horizon end  - is the queue shrinking?
                safety deadline breaches- must be zero, or no other number counts
                mean days to attend     - is urgent work genuinely going first?
-    Tertiary   block utilisation       - sanctioned minutes against worked minutes
+    Tertiary   work per line-minute    - how much work each line-minute buys
                new access requested    - windows taken outside the corridor pattern
                night share, corridor mix
 
@@ -108,7 +108,10 @@ def compute(blocks, scenario, net, detention=None):
         "mean_days_to_attend": mean_attend,
         "tasks_by_department": dict(sorted(dept_tasks.items())),
         # tertiary
-        "block_utilisation_pct": round(100.0 * worked_min / max(1, occupation_min), 1),
+        # Work-minutes packed into each line-minute of occupation. It exceeds
+        # 100% when parallel work shares one possession, which is exactly the
+        # gain merging exists to produce - it is not a utilisation bug.
+        "work_per_line_minute_pct": round(100.0 * worked_min / max(1, occupation_min), 1),
         "merged_blocks": len(merged),
         "new_access_requested": by_type.get("requested", 0),
         "windows_by_type": dict(by_type),

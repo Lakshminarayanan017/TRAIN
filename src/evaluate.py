@@ -145,7 +145,7 @@ def report(harness):
               % (label, c["baseline"], c["coordinated"], _fmt_delta(key, c)))
 
     print("\nTERTIARY")
-    for key, label in (("block_utilisation_pct", "block utilisation (%)"),
+    for key, label in (("work_per_line_minute_pct", "work per line-minute (%)"),
                        ("occupation_per_task_min", "line-minutes per task done"),
                        ("new_access_requested", "new access requested")):
         c = cmp[key]

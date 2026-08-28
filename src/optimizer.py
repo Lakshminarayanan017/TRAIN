@@ -244,17 +244,38 @@ class WeeklyOptimizer:
                 m.Add(sum(xs) <= 1)
 
         # Per-section no-overlap (one block per line at a time) and per-span
-        # cumulative (never sever: at most lines-1 blocked at once).
-        cand_section = {}
-        for ci, c in enumerate(self.candidates):
-            if c["anchor_type"] == "edge":
-                cand_section[ci] = c["anchor"]
+        # cumulative (never sever a section: at most lines-1 blocked at once,
+        # FR-21).
+        #
+        # The occupied section is a property of the WINDOW, not of the candidate:
+        # node work takes a disconnection on whichever incident section its
+        # window belongs to, so a node candidate has no single fixed section.
+        # Each (candidate, section) pair therefore gets its own optional
+        # interval, present exactly when the candidate is placed in one of that
+        # section's windows. Keying these off the candidate's anchor instead
+        # silently omitted every node candidate from both constraints, which is
+        # how a fully severed span reached a plan.
         by_section = defaultdict(list)
         by_span = defaultdict(list)
-        for ci, bsid in cand_section.items():
-            if ci in blk:
-                by_section[bsid].append(blk[ci])
-                by_span[net.span_of(bsid)].append(blk[ci])
+        for ci, c in enumerate(self.candidates):
+            if ci not in blk:
+                continue
+            sd = self._sched_dur(c)
+            per_section = defaultdict(list)
+            for wi in cand_windows[ci]:
+                per_section[win[wi]["bsid"]].append(wi)
+            for bsid, wis in per_section.items():
+                if len(per_section) == 1:
+                    lit = sel[ci]                     # only one possible section
+                else:
+                    lit = m.NewBoolVar("on_%d_%s" % (ci, bsid))
+                    m.Add(lit == sum(x[(ci, wi)] for wi in wis))
+                end = m.NewIntVar(0, HORIZON + sd, "se_%d_%s" % (ci, bsid))
+                m.Add(end == place[ci] + sd)
+                iv = m.NewOptionalIntervalVar(place[ci], sd, end, lit,
+                                              "si_%d_%s" % (ci, bsid))
+                by_section[bsid].append(iv)
+                by_span[net.span_of(bsid)].append(iv)
         for bsid, ivs in by_section.items():
             if len(ivs) > 1:
                 m.AddNoOverlap(ivs)
